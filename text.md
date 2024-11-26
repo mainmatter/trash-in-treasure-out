@@ -2,7 +2,7 @@
 
 By now, you're probably aware that at Mainmatter, we like Rust a lot. If you 
 aren't: [have a look at our Rust page](https://mainmatter.com/rust-consulting/).
-In this blog post, I'd like to highlight one of my favourite traitsof Rust (yes 
+In this blog post, I'd like to highlight one of my favourite traits of Rust (yes 
 pun intended): its focus on _correctness_. Rust has a very expressive type
 system that lets you offload many checks to the compiler: it supports generics,
 data-carrying enums, closures, visibility specifiers, _explicit_ conversions and
@@ -12,7 +12,7 @@ learning curve is a result of Rust's tendency to make complexity really _in your
 face_.
 
 Make no mistake, every piece of software is complex: it has to run on
-computers, which, especially nowadays are complicated beasts. And writing
+computers, which, especially nowadays are complex beasts. And writing
 software with highly optimized languages with manual memory management like
 C, C++ or Rust requires knowledge of all kinds of subtleties. Rust makes these
 sublteties _explicit_, forcing you to fix all kinds of things you may never
@@ -56,18 +56,30 @@ In this article, I'd like to give four pieces of advice:
   information.
 4. Ensure invalid state transitions are rejected at compile time.
 
-## Cup o'joe
+## Ticket to heaven
+We'll need a case to show how all this works, and since Mainmatter loves the
+travel industry, let's write up an API for booking train tickets.
+
+Looking at different train ticket services, in general the steps towards booking
+are pretty similar: first, you enter the location you want to depart from and
+where you want to go, then you enter either your preferred moment of departure
+or when you want to arrive. Next you select one of a number of suggested trips
+and enter your personal information. With all information complete, you're all
+set to book the ticket and pay. Here's what that looks like as a flowchart:
+
 ```mermaid
 ---
-title: Simple sample
+title: Ticket office
 ---
-stateDiagram-v2
-    [*] --> Still
-    Still --> [*]
-
-    Still --> Moving
-    Moving --> Still
-    Moving --> Crash
-    Crash --> [*]
-
+flowchart TD
+    Origin(Select origin) -->
+    Destination(Select destination) -->
+    DepartureTimestamp(Enter departure timestamp) --> Trip
+    Destination --> ArrivalTimestamp(Enter arrival timestamp) --> Trip
+    Trip(Select trip) -->
+    Class(Select class) -->
+    Name(Enter name) -->
+    Email(Enter email) -->
+    PhoneNumber(Enter phone number) -->
+    Book
 ```
