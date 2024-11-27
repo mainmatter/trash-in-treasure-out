@@ -1,8 +1,8 @@
 # Trash in, treasure out
 
-By now, you're probably aware that at Mainmatter, we like Rust a lot. If you 
+By now, you're probably aware that at Mainmatter, we like Rust a lot. If you
 aren't: [have a look at our Rust page](https://mainmatter.com/rust-consulting/).
-In this blog post, I'd like to highlight one of my favourite traits of Rust (yes 
+In this blog post, I'd like to highlight one of my favourite traits of Rust (yes
 pun intended): its focus on _correctness_. Rust has a very expressive type
 system that lets you offload many checks to the compiler: it supports generics,
 data-carrying enums, closures, visibility specifiers, _explicit_ conversions and
@@ -20,7 +20,7 @@ have thought of before even compiling your code.
 
 But that's not all: as projects grow and age and more people work on the same
 piece of software, communication becomes very important. And by communication I
-mean ensuring the original writer of some piece of code, the code reviewer, the 
+mean ensuring the original writer of some piece of code, the code reviewer, the
 user of the code's API, the colleague refactoring the codebase and new
 developers are on the same page about the _intent_ and _invariants_ of that
 code. What is this code doing? How am I supposed to use it correctly? What
@@ -219,7 +219,7 @@ I like that!
 ## Looking back
 Our route handler doesn't do a lot. It will accept any `String` for a body,
 meaning that as far as our app is concerned `"🚂-🛒-🛒-🛒"` is totally a valid
-origin. It's nice that, given a string [must be valid UTF-8], at least our
+origin. It's nice that, given a string [must be valid UTF-8][String], at least our
 handler won't accept random byte sequences, but we can do better. For the
 curious among you: the following code is in the [step 1] commit. Let's add some
 validation:
@@ -278,10 +278,12 @@ Cancelling due to test failure
 error: test run failed
 ```
 
-Yay! It fails! Turns out there's no station called "Amsterdam". We should update
-the test again:
+Yay! It fails! Surprise: turns out there's no station called "Amsterdam". We
+should update the test again:
 
 ```rust
+// tests/main.rs
+
 #[test_case(b"Amsterdam" => panics ""; "Non-existent station")]
 #[test_case("🚂-🛒-🛒-🛒".as_bytes() => panics ""; "Emojional roller coaster")]
 #[test_case(&[0xE0, 0x80, 0x80] => panics "" ; "Non-UTF-8 sequence")]
@@ -301,7 +303,192 @@ async fn test_set_bad_origin(origin: &'static [u8]) {
 
 And those, believe me, totally pass! Now what?
 
+## Even better validation
+We can do better still. Here's the thing: in order for our server to validate
+locations _everywhere_, we'd need to add loads of calls to `is_valid_location`.
+What happens if I forget, though? This is where Rust's expressive type system
+comes in.  With Rust, you can create types that are valid _by construction_.
+The mere fact that such an instance of such type exists, proves that it is
+valid. And this is truly an amazing power. How do you do it? Well, by using the
+[newtype] pattern:
+
+```rust
+// src/types/location.rs
+
+pub struct Location(String);
+```
+
+The code for this section can be found in the repo state as of the [step 2]
+commit.
+
+Now, wrapping a struct in and of itself is not too useful. But we already did
+something very important: give the type a good name, adding semantics! Now, of
+course you'd add some doc comments describing the type some more, but already
+it's clear what this type is meant to represent. There's no way to instantiate
+it from outside the `types::location` module, though. On the one hand, that's
+great: right now there's no way to instantiate an invalid `Location`. However,
+it'd be a huge improvement if we could create _valid_ `Location`s. So let's add
+some methods and trait implementations:
+
+```rust
+// src/types/location.rs
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String")]
+pub struct Location(String);
+
+impl Location {
+    pub fn is_valid_location(location: &str) -> bool {
+        const VALID_LOCATIONS: &[&str] = &[
+            "Amsterdam Centraal",
+            "Paris Nord",
+            "Berlin Hbf",
+            "London Waterloo",
+        ];
+
+        VALID_LOCATIONS.contains(&location)
+    }
+}
+
+impl TryFrom<String> for Location {
+    type Error = ParseLocationError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        if !Self::is_valid_location(&s) {
+            return Err(ParseLocationError(s));
+        }
+        Ok(Self(s))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Error parsing location: {0}")]
+pub struct ParseLocationError(String);
+```
+
+Much better! Using the `#[serde(try_from = "String")]` attribute, we've
+instructed `serde` to call the `Location::try_from` implementation upon
+deserialization. Now, the _only_ way to instantiate a `Location` is through it's
+`TryFrom<String>` implementation, which does the validation. Barring any unsafe
+magic tricks, that is. Getting the value _out_ is a matter of adding more
+functionality, which I won't bore you with right now. But you can imagine adding
+an implementaion for `std::fmt::Display`, or a method
+`fn as_str(&self) -> &str`. Don't go implement `std::ops::Deref<Target=String>`
+though, that'd [defeat the purpose][deref_polymorphism].
+
+With that set up, let's update our model, as well as the relevant method
+handlers. Here's our freshly updated `TicketMachine`, which got moved to the
+`crate::types::ticket_machine` module:
+
+```rust
+// src/types/ticket_machine.rs
+use crate::types::location::Location;
+
+#[derive(Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct TicketMachine {
+    pub origin: Option<Location>,
+    pub destination: Option<Location>,
+    // ✂️ ..other fields
+}
+```
+
+Here's `set_origin`:
+
+```rust
+// src/lib.rs
+
+async fn set_origin(session: Session, Json(origin): Json<Location>) -> Result<Json<TicketMachine>> {
+    Ok(session.get_or_init_state(|s| {
+        s.origin = Some(origin);
+    }))
+    .map(Json)
+}
+```
+
+As you can see, instead of taking a `String` body, this time we're taking a
+`Json<Location>`. Axum will attempt to deserialize the request body into into a
+`Location`, and the `Json<_>` extractor tells it it should use `serde_json` in
+order to do so. And as `serde_json` is going to use the `serde::Deserialize`
+implementation we derived on `Location` before, `Location::try_from<String>`
+gets run even _before_ code within the route handler is run. So within the route
+handler, we're _certain_ that the `origin` parameter represents a valid
+`Location`!
+
+Now of course, our test is just sending plain, unquoted strings, and unquoted
+strings are not valid JSON. So let's update our test:
+
+```rust
+// tests/main.rs
+
+fn json_string_bytes(s: &str) -> Cow<'static, [u8]> {
+    serde_json::to_vec(s).unwrap().into()
+}
+
+#[test_case(json_string_bytes("Amsterdam") => panics ""; "Non-existent station")]
+#[test_case(json_string_bytes("🚂-🛒-🛒-🛒") => panics ""; "Emojional roller coaster")]
+#[test_case([0xE0, 0x80, 0x80].as_slice().into() => panics "" ; "Non-UTF-8 sequence")]
+#[test_case(b"Amsterdam Centraal".into() => panics ""; "Invalid JSON")]
+#[test_case(json_string_bytes("Amsterdam Centraal"); "Valid station")]
+#[tokio::test]
+async fn test_set_bad_origin(origin: Cow<'static, [u8]>) {
+    let origin = origin.to_vec();
+    let body: TicketMachine = send_post_request("/origin", origin.clone()).await;
+
+    let origin: String = serde_json::from_slice(&origin).expect(
+        "The request should have failed at this point as `origin` was not valid JSON anyway",
+    );
+    let origin: Location = origin.try_into().unwrap();
+
+    assert_eq!(
+        body,
+        TicketMachine {
+            origin: Some(origin),
+            ..Default::default()
+        }
+    )
+}
+```
+
+We're now sending JSON! The signature changed a bit: instead of a
+`&'static [u8]`, it now takes a `Cow<'static, [u8]>`, which helps with our JSON
+serialization stuff, but let's not focus on that. Instead, I'm gonna distract
+you with the test results:
+
+```bash
+$ cargo nextest run
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+------------
+ Nextest run ID a7be105d-a24b-44e9-baba-c5a560608792 with nextest profile: default
+    Starting 5 tests across 3 binaries
+        PASS [   0.045s] takeoff::main test_set_bad_origin::valid_station
+        PASS [   0.046s] takeoff::main test_set_bad_origin::non_existent_station
+        PASS [   0.046s] takeoff::main test_set_bad_origin::non_utf_8_sequence
+        PASS [   0.046s] takeoff::main test_set_bad_origin::invalid_json
+        PASS [   0.046s] takeoff::main test_set_bad_origin::emojional_roller_coaster
+------------
+     Summary [   0.047s] 5 tests run: 5 passed, 0 skipped
+```
+
+There we go! With that set up, we have the following guarantees within the
+`set_origin` method handler regarding the request body:
+
+- It's valid UTF-8;
+- It's valid JSON;
+- It represents a valid `Location`, as defined in its `TryFrom<String>`
+  implementation.
+
+And it's all checked by Rust's type system! We might as well throw out the cases
+that pass in non-UTF-8 sequences or invalid JSON: the only really sensible
+part to test is the implementation of `TryFrom<String>`. But let's keep them
+anyway, because tests are great to have when doing big code refactors.
+
+[step 0]: todo
+[step 1]: todo
+[step 2]: todo
+[step 3]: todo
 
 [`axum`]: https://crates.io/crates/axum/
 [`cargo-nextest`]: https://nexte.st/
-[must be valid UTF-8]: https://doc.rust-lang.org/stable/std/string/struct.String.html
+[String]: https://doc.rust-lang.org/stable/std/string/struct.String.html
+[newtype]: https://rust-unofficial.github.io/patterns/patterns/behavioural/newtype.html?highlight=newtype#newtype
+[deref_polymorphism]: https://rust-unofficial.github.io/patterns/anti_patterns/deref.html
