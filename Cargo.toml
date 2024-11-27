@@ -1,0 +1,19 @@
+[package]
+name = "takeoff"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+axum = { version = "0.7", features = ["macros"] }
+axum_session = "0.14.4"
+
+[dev-dependencies]
+reqwest = { version = "0.12.9", features = ["json", "cookies"] }
+serde_json = "1.0.133"
+test-case = "3.3.1"
+url = "2.5.4"
+# Axum, serde, serde_json,
