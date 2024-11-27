@@ -215,3 +215,93 @@ $ cargo nextest run
 > 1 test run: 1 passed
 
 I like that!
+
+## Looking back
+Our route handler doesn't do a lot. It will accept any `String` for a body,
+meaning that as far as our app is concerned `"🚂-🛒-🛒-🛒"` is totally a valid
+origin. It's nice that, given a string [must be valid UTF-8], at least our
+handler won't accept random byte sequences, but we can do better. For the
+curious among you: the following code is in the [step 1] commit. Let's add some
+validation:
+
+```rust
+// src/lib.rs
+
+pub fn is_valid_location(location: &str) -> bool {
+    const VALID_LOCATIONS: &[&str] = &[
+        "Amsterdam Centraal",
+        "Paris Nord",
+        "Berlin Hbf",
+        "London Waterloo",
+    ];
+
+    VALID_LOCATIONS.contains(&location)
+}
+
+// ✂️
+
+async fn set_origin(session: Session, origin: String) -> Result<Json<TicketMachine>> {
+    if !is_valid_location(&origin) {
+        return Err(Error::BadRequest("Invalid origin!"));
+    }
+
+    Ok(session.get_or_init_state(|s| {
+        s.origin = Some(origin);
+    }))
+    .map(Json)
+}
+```
+
+Let's test some more:
+
+```bash
+$ cargo nextest run
+Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+------------
+Nextest run ID 3437f17c-6fed-4b9b-8fad-27b324e45602 with nextest profile: default
+Starting 1 test across 3 binaries
+    FAIL [   0.014s] takeoff::main test_set_origin
+
+--- STDOUT:              takeoff::main test_set_origin ---
+
+<Omitted for your sanity>
+
+--- STDERR:              takeoff::main test_set_origin ---
+thread 'test_set_origin' panicked at tests/main.rs:34:9:
+Received error response (reqwest::Error { kind: Status(400), url: "http://localhost:3000/origin" }): 'Bad Request: Invalid origin!'
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+Cancelling due to test failure
+------------
+ Summary [   0.015s] 1 test run: 0 passed, 1 failed, 0 skipped
+    FAIL [   0.014s] takeoff::main test_set_origin
+error: test run failed
+```
+
+Yay! It fails! Turns out there's no station called "Amsterdam". We should update
+the test again:
+
+```rust
+#[test_case(b"Amsterdam" => panics ""; "Non-existent station")]
+#[test_case("🚂-🛒-🛒-🛒".as_bytes() => panics ""; "Emojional roller coaster")]
+#[test_case(&[0xE0, 0x80, 0x80] => panics "" ; "Non-UTF-8 sequence")]
+#[test_case(b"Amsterdam Centraal"; "Valid station")]
+#[tokio::test]
+async fn test_set_bad_origin(origin: &'static [u8]) {
+    let body: TicketMachine = send_post_request("/origin", origin).await;
+    assert_eq!(
+        body,
+        TicketMachine {
+            origin: Some(String::from_utf8(origin.to_vec()).unwrap()),
+            ..Default::default()
+        }
+    )
+}
+```
+
+And those, believe me, totally pass! Now what?
+
+
+[`axum`]: https://crates.io/crates/axum/
+[`cargo-nextest`]: https://nexte.st/
+[must be valid UTF-8]: https://doc.rust-lang.org/stable/std/string/struct.String.html
