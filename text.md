@@ -83,3 +83,135 @@ flowchart TD
     PhoneNumber(Enter phone number) -->
     Book
 ```
+
+Pretty straightforward, right? Let's code one up.
+
+## Setting up
+Let's set up a simple [`axum`]-based server to implement before flow. I'm only
+going to post the code relevant to the story in here, but if you're interested
+in the whole shebang: checkout the code for [step 0]. Here's what the app
+setup looks like:
+
+```rust
+// src/lib.rs
+
+pub async fn run() -> Result<()> {
+    // Setup router
+    let router = axum::Router::new()
+        .route("/origin", post(set_origin))
+        .route("/destination", post(set_destination))
+        .route("/departure", post(set_departure))
+        .route("/arrival", post(set_arrival))
+        .route("/trips", get(list_trips))
+        .route("/trip", post(set_trip))
+        .route("/class", post(set_class))
+        .route("/name", post(set_name))
+        .route("/email", post(set_email))
+        .route("/phone_number", post(set_phone_number))
+        .route("/book_trip", post(book_trip));
+
+    // Create in-memory session store
+    let session_store: SessionNullSessionStore = SessionStore::new(None, SessionConfig::default())
+        .await
+        .unwrap();
+
+    // Stitch them together
+    let app = router
+        .layer(SessionLayer::new(session_store))
+        .into_make_service();
+
+    // Aand serve!
+    let listener = TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+```
+
+As you can see, we've got routes for each step, as well as a basic in-memory
+session store. For now, the handlers are pretty similar. Here's `set_origin`:
+
+```rust
+// src/lib.rs
+
+async fn set_origin(session: Session, origin: String) -> Result<Json<TicketMachine>> {
+    Ok(session.get_or_init_state(|s| {
+        s.origin = Some(origin);
+    }))
+    .map(Json)
+}
+```
+
+If you're not familiar with [`axum`]: this handler extracts the session out of
+the session layer, and gives us the request body as a `String`.
+`Session::get_or_init_state` fetches the current state from the session store,
+and updates it with the closure passed to it. If there's no session yet, it
+creates a default one, that it passes to the closure.
+
+So what's this `TicketMachine` in the route handler example? Well, it's the
+representation of the state of the booking flow. Here's the definition:
+
+```rust
+// src/ticket_machine.rs
+
+#[derive(Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct TicketMachine {
+    pub origin: Option<String>,
+    pub destination: Option<String>,
+    pub departure: Option<String>,
+    pub arrival: Option<String>,
+    pub trip: Option<String>,
+    pub class: Option<String>,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub phone_number: Option<String>,
+}
+```
+
+Pretty much a bunch of optional strings. Does is work, though? Well, let's also
+create a little integration test:
+
+```rust
+// tests/main.rs
+
+#[tokio::test]
+async fn test_set_origin() {
+    let body: TicketMachine = send_post_request("/origin", "Amsterdam").await;
+    assert_eq!(
+        body,
+        TicketMachine {
+            origin: Some("Amsterdam".to_owned()),
+            ..Default::default()
+        }
+    )
+}
+```
+
+Nothing too surprising. The `send_post_request` helper function sends a HTTP
+POST request to our server, given the path (`"/origin"`) and the body
+(`"Amsterdam"`). Now, let's give it a spin. In one terminal window,
+we start the server, and we'll run the tests in a separate terminal window:
+
+```bash
+// start server
+$ cargo run
+[..]
+```
+
+I'm using [`cargo-nextest`], because it gives me pretty and concise reports.
+
+```bash
+// Run tests
+$ cargo nextest run
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+------------
+ Nextest run ID 2b617168-9190-4619-ba1d-27a3e6cdc815 with nextest profile: default
+    Starting 1 test across 3 binaries
+        PASS [   0.016s] takeoff::main test_set_origin
+------------
+     Summary [   0.017s] 1 test run: 1 passed, 0 skipped
+```
+
+> 1 test run: 1 passed
+
+I like that!
