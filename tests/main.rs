@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use axum::http::HeaderValue;
 use reqwest::Body;
 use takeoff::ticket_machine::TicketMachine;
+use test_case::test_case;
 use url::Url;
 
 static BASE_URL: LazyLock<Url> = LazyLock::new(|| Url::parse("http://localhost:3000/").unwrap());
@@ -42,13 +43,18 @@ async fn send_post_request<Res: serde::de::DeserializeOwned>(
     res.json().await.expect("JSON deserialisation error")
 }
 
+#[test_case(b"Amsterdam" => panics ""; "Non-existent station")]
+#[test_case("🚂-🛒-🛒-🛒".as_bytes() => panics ""; "Emojional roller coaster")]
+#[test_case(&[0xE0, 0x80, 0x80] => panics "" ; "Non-UTF-8 sequence")]
+#[test_case(b"Amsterdam Centraal"; "Valid station")]
 #[tokio::test]
-async fn test_set_origin() {
-    let body: TicketMachine = send_post_request(&http_client(), "/origin", "Amsterdam").await;
+async fn test_set_origin(origin: &'static [u8]) {
+    let body: TicketMachine = send_post_request(&http_client(), "/origin", origin).await;
+
     assert_eq!(
         body,
         TicketMachine {
-            origin: Some("Amsterdam".to_owned()),
+            origin: Some(String::from_utf8(origin.to_vec()).unwrap()),
             ..Default::default()
         }
     )

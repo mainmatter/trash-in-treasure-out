@@ -14,6 +14,17 @@ pub mod ticket_machine;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
+pub fn is_valid_location(location: &str) -> bool {
+    const VALID_LOCATIONS: &[&str] = &[
+        "Amsterdam Centraal",
+        "Paris Nord",
+        "Berlin Hbf",
+        "London Waterloo",
+    ];
+
+    VALID_LOCATIONS.contains(&location)
+}
+
 pub async fn run() -> Result<()> {
     // Setup router
     let router = axum::Router::new()
@@ -47,6 +58,10 @@ pub async fn run() -> Result<()> {
 }
 
 async fn set_origin(session: Session, origin: String) -> Result<Json<TicketMachine>> {
+    if !is_valid_location(&origin) {
+        return Err(Error::BadRequest("Invalid origin!"));
+    }
+
     Ok(session.get_or_init_state(|s| {
         s.origin = Some(origin);
     }))
