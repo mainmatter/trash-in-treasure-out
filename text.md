@@ -81,7 +81,7 @@ flowchart TD
     Name(Enter name) -->
     Email(Enter email) -->
     PhoneNumber(Enter phone number) -->
-    Book
+    Book(Book and pay)
 ```
 
 Pretty straightforward, right? Let's code one up.
@@ -165,6 +165,7 @@ pub struct TicketMachine {
     pub name: Option<String>,
     pub email: Option<String>,
     pub phone_number: Option<String>,
+    pub payment_info: Option<String>,
 }
 ```
 
@@ -176,7 +177,7 @@ create a little integration test:
 
 #[tokio::test]
 async fn test_set_origin() {
-    let body: TicketMachine = send_post_request("/origin", "Amsterdam").await;
+    let body: TicketMachine = send_post_request(&http_client(), "/origin", "Amsterdam").await;
     assert_eq!(
         body,
         TicketMachine {
@@ -187,10 +188,11 @@ async fn test_set_origin() {
 }
 ```
 
-Nothing too surprising. The `send_post_request` helper function sends a HTTP
-POST request to our server, given the path (`"/origin"`) and the body
-(`"Amsterdam"`). Now, let's give it a spin. In one terminal window,
-we start the server, and we'll run the tests in a separate terminal window:
+Nothing too surprising. `http_client` sets up a [`reqwest`] HTTP client, and
+the `send_post_request` helper function sends a POST request to our server,
+given the path (`"/origin"`) and the body (`"Amsterdam"`). Now, let's give it a
+spin. In one terminal window, we start the server, and we'll run the tests in a
+separate terminal window:
 
 ```bash
 // start server
@@ -252,7 +254,7 @@ async fn set_origin(session: Session, origin: String) -> Result<Json<TicketMachi
 }
 ```
 
-Let's test some more:
+And test some more:
 
 ```bash
 $ cargo nextest run
@@ -482,12 +484,202 @@ that pass in non-UTF-8 sequences or invalid JSON: the only really sensible
 part to test is the implementation of `TryFrom<String>`. But let's keep them
 anyway, because tests are great to have when doing big code refactors.
 
+## Output sanitization
+So far, Rust's type system has been working for us really well to give us
+guarantees about input. How about output though? Using the [`newtype`] pattern
+from the previous section again, we can ensure sensitive data gets hidden in
+responses and logs. Furthermore, we can make make the output encoding format
+part of our type zoo. Let me remind you what our `TicketOffice` model looks like
+so far:
+
+```rust
+// src/types/ticket_machine.rs
+
+#[derive(Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct TicketMachine {
+    pub origin: Option<Location>,
+    pub destination: Option<Location>,
+    pub departure: Option<String>,
+    pub arrival: Option<String>,
+    pub trip: Option<String>,
+    pub class: Option<String>,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub phone_number: Option<String>,
+    pub payment_info: Option<String>,
+}
+```
+
+First thing you'll notice is that we aren't doing any input validation for the
+fields other than of `origin` and `destination`. But other than that, our struct
+holds some sensitive personal data: `name`, `email`, `phone_number`, and
+`payment_info`. Let's focus on that last field, `payment_info`, though. We
+haven't specified yet what `payment_info` _is_, but let's assume for now that it
+may contain credit card details. Now, credit card details are things you don't
+want ending up in your logs or in API responses. Using the [`newtype`] pattern,
+we can make it _really hard_ to leak such data to the logs. Let's conjure up a
+`PaymentInfo` type:
+
+```rust
+// src/types/payment_info.rs
+
+#[derive(Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(into = "String")]
+pub struct PaymentInfo(String);
+
+impl std::fmt::Display for PaymentInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<SECRET>")
+    }
+}
+
+impl std::fmt::Debug for PaymentInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(PaymentInfo))
+            .field(&"<SECRET>")
+            .finish()
+    }
+}
+
+impl From<PaymentInfo> for String {
+    fn from(p: PaymentInfo) -> Self {
+        p.to_string()
+    }
+}
+```
+
+This time, we've ensured the ways to convert `PaymentInfo` to a `String` are
+watertight. Using the `#[serde(into = "String")]` attribute on the struct
+definition, we've ensured that Serde uses the `Into<String>` implementation on
+`PaymentInfo` to serialize the struct, which gets forwarded to its `Display`
+implementation. And that implementation hides our secrets. Nice! Accidentally
+logging payment info is covered as well by the custom implementation of `Debug`.
+Obviously, `PaymentInfo` requires input validation, too, but let's keep focus
+on the output right now.
+
+Let's update our `TicketMachine` and the `book_trip` route handler:
+
+```rust
+// src/types/ticket_machine.rs
+
+#[derive(Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct TicketMachine {
+    // ✂️ ..other fields
+    pub payment_info: Option<PaymentInfo>,
+}
+
+// src/lib.rs
+
+async fn book_trip(
+    session: Session,
+    Json(payment_info): Json<PaymentInfo>,
+) -> Result<Json<TicketMachine>> {
+    session
+        .update_state(|s| {
+            s.payment_info = Some(payment_info);
+            println!("🚂 Trip booked! Choo choo!");
+        })
+        .ok_or(Error::BadRequest("Set phone_number first"))
+        .map(Json)
+}
+```
+
+Great. We were already wrapping our output in a `Json`, ensuring the data gets
+encoded in the right format before sending it out. Now we'll add a some tests to
+validate that this works:
+
+```rust
+// tests/main.rs
+
+#[tokio::test]
+async fn test_hiding_payment_details() {
+    let client = http_client();
+    let origin = json!("Amsterdam Centraal");
+    // Set up the session
+    let _: TicketMachine =
+        send_post_request(&client, "/origin", serde_json::to_vec(&origin).unwrap()).await;
+
+    // Totally not _my_ credit card
+    let payment_info = json!({
+        "card_number": "1234 5678 9012 3456",
+        "cvc": "123",
+        "exp": "12/34",
+    })
+    .to_string();
+    // Deserialize into a Value, so that we can skip any input validation on
+    // the test side.
+    let state: serde_json::Value = send_post_request(
+        &client,
+        "/book_trip",
+        serde_json::to_vec(dbg!(&payment_info)).unwrap(),
+    )
+    .await;
+
+    assert_eq!(state["payment_info"], "<SECRET>");
+}
+
+// src/types/payment_info.rs
+
+#[tokio::test]
+async fn test_payment_details_debug_impl() {
+    use crate::types::ticket_machine::TicketMachine;
+    use std::fmt::Write;
+
+    let ticket_machine = TicketMachine {
+        origin: None,
+        destination: None,
+        departure: None,
+        arrival: None,
+        trip: None,
+        class: None,
+        name: None,
+        email: None,
+        phone_number: None,
+        payment_info: Some("💰💰💰".to_owned().try_into().unwrap()),
+    };
+    let mut dbg_output = String::new();
+    write!(&mut dbg_output, "{ticket_machine:?}").unwrap();
+
+    assert_eq!(
+        dbg_output,
+        r#"TicketMachine { origin: None, destination: None, departure: None, arrival: None, trip: None, class: None, name: None, email: None, phone_number: None, payment_info: Some(PaymentInfo("<SECRET>")) }"#
+    )
+}
+```
+
+And test:
+
+```bash
+$cargo nextest run
+   Compiling takeoff v0.1.0 (/Users/hdoordt/dev/mm/content/trash-in-treasure-out)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+------------
+ Nextest run ID 1ba4afd2-c85c-4817-8f6d-5d66090fb3a1 with nextest profile: default
+    Starting 7 tests across 3 binaries
+        PASS [   0.015s] takeoff types::payment_info::test_payment_details_debug_impl
+        PASS [   0.051s] takeoff::main test_set_bad_origin::valid_station
+        PASS [   0.051s] takeoff::main test_set_bad_origin::invalid_json
+        PASS [   0.051s] takeoff::main test_set_bad_origin::non_existent_station
+        PASS [   0.051s] takeoff::main test_set_bad_origin::emojional_roller_coaster
+        PASS [   0.051s] takeoff::main test_set_bad_origin::non_utf_8_sequence
+        PASS [   0.052s] takeoff::main test_hiding_payment_details
+------------
+     Summary [   0.052s] 7 tests run: 7 passed, 0 skipped
+```
+
+There you go! With that, we've ensured that once our `PaymentInfo` is
+instatiated, it'll be quite hard to accidentally leak its contents. Completely
+hiding the payment info from everything would make it rather unuseful, but at
+least we can't accidentally log them or send them in a response, preventing a
+very likely cause of leaking information.
+
 [step 0]: todo
 [step 1]: todo
 [step 2]: todo
 [step 3]: todo
 
 [`axum`]: https://crates.io/crates/axum/
+[`reqwest`]: https://crates.io/crates/reqwest/
 [`cargo-nextest`]: https://nexte.st/
 [String]: https://doc.rust-lang.org/stable/std/string/struct.String.html
 [newtype]: https://rust-unofficial.github.io/patterns/patterns/behavioural/newtype.html?highlight=newtype#newtype
