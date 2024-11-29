@@ -1,4 +1,4 @@
-use crate::ticket_machine::TicketMachine;
+use crate::types::ticket_machine::TicketMachine;
 
 pub type Session = axum_session::Session<axum_session::SessionNullPool>;
 

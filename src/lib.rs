@@ -5,25 +5,15 @@ use axum::{
 use axum_session::{SessionConfig, SessionLayer, SessionNullSessionStore, SessionStore};
 use error::Error;
 use session::{Session, SessionExt};
-use ticket_machine::TicketMachine;
+
 use tokio::net::TcpListener;
+use types::{location::Location, ticket_machine::TicketMachine};
 
 pub mod error;
 pub mod session;
-pub mod ticket_machine;
+pub mod types;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
-
-pub fn is_valid_location(location: &str) -> bool {
-    const VALID_LOCATIONS: &[&str] = &[
-        "Amsterdam Centraal",
-        "Paris Nord",
-        "Berlin Hbf",
-        "London Waterloo",
-    ];
-
-    VALID_LOCATIONS.contains(&location)
-}
 
 pub async fn run() -> Result<()> {
     // Setup router
@@ -57,18 +47,17 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-async fn set_origin(session: Session, origin: String) -> Result<Json<TicketMachine>> {
-    if !is_valid_location(&origin) {
-        return Err(Error::BadRequest("Invalid origin!"));
-    }
-
+async fn set_origin(session: Session, Json(origin): Json<Location>) -> Result<Json<TicketMachine>> {
     Ok(session.get_or_init_state(|s| {
         s.origin = Some(origin);
     }))
     .map(Json)
 }
 
-async fn set_destination(session: Session, destination: String) -> Result<Json<TicketMachine>> {
+async fn set_destination(
+    session: Session,
+    Json(destination): Json<Location>,
+) -> Result<Json<TicketMachine>> {
     session
         .update_state(|s| s.destination = Some(destination))
         .ok_or(Error::BadRequest("Set origin first"))

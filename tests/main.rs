@@ -1,8 +1,8 @@
-use std::sync::LazyLock;
+use std::{borrow::Cow, sync::LazyLock};
 
 use axum::http::HeaderValue;
 use reqwest::Body;
-use takeoff::ticket_machine::TicketMachine;
+use takeoff::types::{location::Location, ticket_machine::TicketMachine};
 use test_case::test_case;
 use url::Url;
 
@@ -43,18 +43,29 @@ async fn send_post_request<Res: serde::de::DeserializeOwned>(
     res.json().await.expect("JSON deserialisation error")
 }
 
-#[test_case(b"Amsterdam" => panics ""; "Non-existent station")]
-#[test_case("🚂-🛒-🛒-🛒".as_bytes() => panics ""; "Emojional roller coaster")]
-#[test_case(&[0xE0, 0x80, 0x80] => panics "" ; "Non-UTF-8 sequence")]
-#[test_case(b"Amsterdam Centraal"; "Valid station")]
+fn json_string_bytes(s: &str) -> Cow<'static, [u8]> {
+    serde_json::to_vec(s).unwrap().into()
+}
+
+#[test_case(json_string_bytes("Amsterdam") => panics ""; "Non-existent station")]
+#[test_case(json_string_bytes("🚂-🛒-🛒-🛒") => panics ""; "Emojional roller coaster")]
+#[test_case([0xE0, 0x80, 0x80].as_slice().into() => panics "" ; "Non-UTF-8 sequence")]
+#[test_case(b"Amsterdam Centraal".into() => panics ""; "Invalid JSON")]
+#[test_case(json_string_bytes("Amsterdam Centraal"); "Valid station")]
 #[tokio::test]
-async fn test_set_origin(origin: &'static [u8]) {
-    let body: TicketMachine = send_post_request(&http_client(), "/origin", origin).await;
+async fn test_set_origin(origin: Cow<'static, [u8]>) {
+    let origin = origin.to_vec();
+    let body: TicketMachine = send_post_request(&http_client(), "/origin", origin.clone()).await;
+
+    let origin: String = serde_json::from_slice(&origin).expect(
+        "The request should have failed at this point as `origin` was not valid JSON anyway",
+    );
+    let origin: Location = origin.try_into().unwrap();
 
     assert_eq!(
         body,
         TicketMachine {
-            origin: Some(String::from_utf8(origin.to_vec()).unwrap()),
+            origin: Some(origin),
             ..Default::default()
         }
     )
