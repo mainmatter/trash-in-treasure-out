@@ -7,7 +7,7 @@ use error::Error;
 use session::{Session, SessionExt};
 
 use tokio::net::TcpListener;
-use types::{location::Location, ticket_machine::TicketMachine};
+use types::{location::Location, payment_info::PaymentInfo, ticket_machine::TicketMachine};
 
 pub mod error;
 pub mod session;
@@ -120,11 +120,14 @@ async fn set_phone_number(session: Session, phone_number: String) -> Result<Json
         .map(Json)
 }
 
-async fn book_trip(session: Session, payment_info: String) -> Result<Json<TicketMachine>> {
+async fn book_trip(
+    session: Session,
+    Json(payment_info): Json<PaymentInfo>,
+) -> Result<Json<TicketMachine>> {
     session
         .update_state(|s| {
+            s.payment_info = Some(payment_info);
             println!("🚂 Trip booked! Choo choo!");
-            s.payment_info = Some(payment_info)
         })
         .ok_or(Error::BadRequest("Set phone_number first"))
         .map(Json)

@@ -1,5 +1,7 @@
 use crate::types::location::Location;
 
+use super::payment_info::PaymentInfo;
+
 #[derive(Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct TicketMachine {
     pub origin: Option<Location>,
@@ -11,5 +13,5 @@ pub struct TicketMachine {
     pub name: Option<String>,
     pub email: Option<String>,
     pub phone_number: Option<String>,
-    pub payment_info: Option<String>,
+    pub payment_info: Option<PaymentInfo>,
 }

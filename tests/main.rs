@@ -2,6 +2,7 @@ use std::{borrow::Cow, sync::LazyLock};
 
 use axum::http::HeaderValue;
 use reqwest::Body;
+use serde_json::json;
 use takeoff::types::{location::Location, ticket_machine::TicketMachine};
 use test_case::test_case;
 use url::Url;
@@ -69,4 +70,31 @@ async fn test_set_origin(origin: Cow<'static, [u8]>) {
             ..Default::default()
         }
     )
+}
+
+#[tokio::test]
+async fn test_hiding_payment_details() {
+    let client = http_client();
+    let origin = json!("Amsterdam Centraal");
+    // Set up the session
+    let _: TicketMachine =
+        send_post_request(&client, "/origin", serde_json::to_vec(&origin).unwrap()).await;
+
+    // Totally not _my_ credit card
+    let payment_info = json!({
+        "card_number": "1234 5678 9012 3456",
+        "cvc": "123",
+        "exp": "12/34",
+    })
+    .to_string();
+    // Deserialize into a Value, so that we can skip any input validation on
+    // the test side.
+    let state: serde_json::Value = send_post_request(
+        &client,
+        "/book_trip",
+        serde_json::to_vec(dbg!(&payment_info)).unwrap(),
+    )
+    .await;
+
+    assert_eq!(state["payment_info"], "<SECRET>");
 }
