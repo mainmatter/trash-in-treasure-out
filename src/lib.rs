@@ -7,7 +7,15 @@ use error::Error;
 use session::{Session, SessionExt};
 
 use tokio::net::TcpListener;
-use types::{location::Location, payment_info::PaymentInfo, ticket_machine::TicketMachine};
+use types::{
+    class::Class,
+    customer_details::{Email, Name, PhoneNumber},
+    departure_or_arrival::{DepartureOrArrival, FutureTimestamp},
+    location::Location,
+    payment_info::PaymentInfo,
+    ticket_machine::TicketMachine,
+    trip::{Trip, TripId},
+};
 
 pub mod error;
 pub mod session;
@@ -64,56 +72,72 @@ async fn set_destination(
         .map(Json)
 }
 
-async fn set_departure(session: Session, departure: String) -> Result<Json<TicketMachine>> {
+async fn set_departure(
+    session: Session,
+    Json(departure): Json<FutureTimestamp>,
+) -> Result<Json<TicketMachine>> {
     session
-        .update_state(|s| s.departure = Some(departure))
+        .update_state(|s| s.time = Some(DepartureOrArrival::Departure(departure)))
         .ok_or(Error::BadRequest("Set destination first"))
         .map(Json)
 }
 
-async fn set_arrival(session: Session, arrival: String) -> Result<Json<TicketMachine>> {
+async fn set_arrival(
+    session: Session,
+    Json(arrival): Json<FutureTimestamp>,
+) -> Result<Json<TicketMachine>> {
     session
-        .update_state(|s| s.arrival = Some(arrival))
+        .update_state(|s| s.time = Some(DepartureOrArrival::Arrival(arrival)))
         .ok_or(Error::BadRequest("Set destination first"))
         .map(Json)
 }
 
-async fn list_trips(session: Session) -> Result<()> {
-    let _state = session
+async fn list_trips(session: Session) -> Result<Json<Vec<Trip>>> {
+    let state = session
         .try_get_state()
         .ok_or(Error::BadRequest("Set trip details first"))?;
-    Ok(())
+
+    let ((origin, destination), time) = state
+        .origin
+        .zip(state.destination)
+        .zip(state.time)
+        .ok_or(Error::BadRequest("Trip details incomplete"))?;
+
+    Ok(Trip::list_matching(origin, destination, time)).map(Json)
 }
 
-async fn set_trip(session: Session, trip: String) -> Result<Json<TicketMachine>> {
+async fn set_trip(session: Session, Json(trip_id): Json<TripId>) -> Result<Json<TicketMachine>> {
     session
-        .update_state(|s| s.trip = Some(trip))
+        .update_state(|s| s.trip = Some(trip_id))
         .ok_or(Error::BadRequest("Set departure or arrival time first"))
         .map(Json)
 }
 
-async fn set_class(session: Session, class: String) -> Result<Json<TicketMachine>> {
+async fn set_class(session: Session, Json(class): Json<Class>) -> Result<Json<TicketMachine>> {
     session
         .update_state(|s| s.class = Some(class))
         .ok_or(Error::BadRequest("Select a trip first"))
         .map(Json)
 }
 
-async fn set_name(session: Session, name: String) -> Result<Json<TicketMachine>> {
+async fn set_name(session: Session, Json(name): Json<Name>) -> Result<Json<TicketMachine>> {
     session
         .update_state(|s| s.name = Some(name))
         .ok_or(Error::BadRequest("Set class first"))
         .map(Json)
 }
 
-async fn set_email(session: Session, email: String) -> Result<Json<TicketMachine>> {
+async fn set_email(session: Session, Json(email): Json<Email>) -> Result<Json<TicketMachine>> {
     session
         .update_state(|s| s.email = Some(email))
         .ok_or(Error::BadRequest("Set name first"))
         .map(Json)
 }
 
-async fn set_phone_number(session: Session, phone_number: String) -> Result<Json<TicketMachine>> {
+async fn set_phone_number(
+    session: Session,
+    Json(phone_number): Json<PhoneNumber>,
+) -> Result<Json<TicketMachine>> {
     session
         .update_state(|s| s.phone_number = Some(phone_number))
         .ok_or(Error::BadRequest("Set email first"))
@@ -127,8 +151,11 @@ async fn book_trip(
     session
         .update_state(|s| {
             s.payment_info = Some(payment_info);
-            println!("🚂 Trip booked! Choo choo!");
         })
         .ok_or(Error::BadRequest("Set phone_number first"))
+        .map(|t| {
+            t.book()?;
+            Ok(t)
+        })?
         .map(Json)
 }

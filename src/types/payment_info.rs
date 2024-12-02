@@ -39,8 +39,7 @@ async fn test_payment_details_debug_impl() {
     let ticket_machine = TicketMachine {
         origin: None,
         destination: None,
-        departure: None,
-        arrival: None,
+        time: None,
         trip: None,
         class: None,
         name: None,
@@ -54,8 +53,8 @@ async fn test_payment_details_debug_impl() {
     assert_eq!(
         dbg_output,
         concat!(
-            "TicketMachine { origin: None, destination: None, departure: None, ",
-            "arrival: None, trip: None, class: None, name: None, email: None, ",
+            "TicketMachine { origin: None, destination: None, time: None, ",
+            "trip: None, class: None, name: None, email: None, ",
             r#"phone_number: None, payment_info: Some(PaymentInfo("<SECRET>")) }"#
         )
     )
