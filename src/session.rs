@@ -42,7 +42,8 @@ impl SessionExt for Session {
     {
         self.try_get_state().map(|mut s| {
             f(&mut s);
-            s
+            self.set(SESSION_STATE_KEY, s);
+            self.try_get_state().unwrap()
         })
     }
 
