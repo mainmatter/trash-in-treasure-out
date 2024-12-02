@@ -1,6 +1,5 @@
 # Trash in, treasure out
 
-Example code repository for Mainmatter's 'Trash In, Treasure Out` blog post about Semantic Typing in Rust.
+Example code repository for Mainmatter's 'Trash In, Treasure Out` blog post.
 
-Link: todo
-Content: text.md
+Content: [text.md](text.md)
