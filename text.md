@@ -8,7 +8,7 @@ In this blog post, I'd like to highlight one of my favorite traits of Rust (yes
 pun intended): its focus on _correctness_. Rust has a very expressive type
 system that lets you offload many checks to the compiler: it supports generics,
 data-carrying enums, closures, visibility specifiers, _explicit_ conversions, and
-much more. These arereat features that make performant, low-level programming 
+much more. These are neat features that make performant, low-level programming 
 feel as ergonomic as high-level languages. Sure, Rust has a learning curve, and
 thatlearning curve is a result of Rust's tendency to make complexity really _in
 your face_.
@@ -687,7 +687,7 @@ In the [introduction](#trash-in-treasure-out), I listed three pieces of advice:
 > 3. Ensure output gets encoded in the correct format and doesn’t leak
   (sensitive) information.
   
-In [step 2](#-even-better-validation), we've covered the first two points.
+In [step 2](#even-better-validation), we've covered the first two points.
 We started out creating an explicit `Location` type, with a name that clearly
 indicates what it conveys. We've skipped adding documentation on that type,
 but if we hadn't, it could describe the semantics and invariants of `Location`
