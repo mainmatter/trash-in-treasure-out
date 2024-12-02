@@ -48,13 +48,12 @@ the feedback loop. It makes adding features, refactoring, and reviewing much
 less error-prone. And it's great for security as well. It's where coding meets
 art, really.
 
-In this article, I'd like to give four pieces of advice:
+In this article, I'd like to give three main pieces of advice:
 1. Encode the semantics/states of your application in the type system and your
   API.
 2. Ensure input gets parsed into rigid structs before acceptance.
 3. Ensure output gets encoded in the correct format and doesn’t leak (sensitive)
   information.
-4. Ensure invalid state transitions are rejected at compile time.
 
 ## Ticket to heaven
 We'll need a case to show how all this works, and since Mainmatter loves the
@@ -517,8 +516,9 @@ holds some sensitive personal data: `name`, `email`, `phone_number`, and
 haven't specified yet what `payment_info` _is_, but let's assume for now that it
 may contain credit card details. Now, credit card details are things you don't
 want ending up in your logs or in API responses. Using the [`newtype`] pattern,
-we can make it _really hard_ to leak such data to the logs. Let's conjure up a
-`PaymentInfo` type:
+we can make it _really hard_ to leak such data to the logs. The following
+examples can be found in the repo state as of the [step 3] commit. Let's conjure
+up a `PaymentInfo` type:
 
 ```rust
 // src/types/payment_info.rs
@@ -650,7 +650,7 @@ async fn test_payment_details_debug_impl() {
 And test:
 
 ```bash
-$cargo nextest run
+$ cargo nextest run
    Compiling takeoff v0.1.0 (/Users/hdoordt/dev/mm/content/trash-in-treasure-out)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
 ------------
@@ -673,6 +673,63 @@ hiding the payment info from everything would make it rather unuseful, but at
 least we can't accidentally log them or send them in a response, preventing a
 very likely cause of leaking information.
 
+## Wrapping up
+We've reached a lot already! We've created meaningful types for handling the
+data in our model, ensured they're valid by construction, and that they don't
+leak sensitive information. With that, our API has become much more robust than
+the version we started out with. Let's summarize what we've achieved with that.
+
+In the [introduction](#trash-in-treasure-out), I listed three pieces of advice:
+
+> 1. Encode the semantics/states of your application in the type system and your
+  API.
+> 2. Ensure input gets parsed into rigid structs before acceptance.
+> 3. Ensure output gets encoded in the correct format and doesn’t leak
+  (sensitive) information.
+  
+In [step 2](#-even-better-validation), we've covered the first two points.
+We started out creating an explicit `Location` type, with a name that clearly
+indicates what it conveys. We've skipped adding documentation on that type,
+but if we hadn't, it could describe the semantics and invariants of `Location`
+some more. That documentation would be easily findable anywhere `Location` is
+used.
+
+Furthermore, we ensured `Location`s are valid by construction: by implementing
+the validation in the `TryFrom<String>` implementation for `Location`, and
+ensuring the `Location` can only be created and deserialized via that
+validation, we've ensured that a `Location` _always_ represents a valid
+location, *as long as our valication logic is correct*. And by accepting
+`Json<Location>` in our Axum request handlers directly, those handlers don't
+need to do any further validation.
+
+In [step 3](#output-sanitization), we've ensured the `PaymentDetails` can't leak
+sensitive information in logs or responses by implementing `Debug` and `Display`
+such that they don't actually use the wrapped `String`, and ensured the
+`From<PaymentDetails>` implementation for `String` uses our `Display`
+implementation. We can add dedicated methods to get the data out in case we
+need to store the payment details in our database, for instance. With that,
+_accidentally_ leaking such info has become much harder.
+
+Are there any downsides? As always: yes, this is no silver bullet. One thing you
+probably have noticed so far is that the patterns described in this post
+introduce a bunch of boilerplate. There are crates (e.g. [`nutype`]) out there
+that aim to reduce this, but they come with their own trade offs. Furthermore,
+sometimes not all invariants can be expressed in Rust code. In such cases, one
+still has to rely on documentation to be thorough and correct.
+
+Other than that, rigidity may not always be what you want. Somtimes your
+invariants and requirements are not all that clear, and are very subject to
+change. In such cases, it's not great to update loads of boilerplate all the
+time. This, I think, is a bit of a matter of taste: I myself like to force
+myself to clarify the requirements and invariants before implementation, and
+with the validation being implemented in a single place, updating that is not
+such a big hassle. And what you get back is huge: correct, robust, clear and 
+maintainable code!
+
+*In [step 4], I've updated the rest of the method handlers. Be sure to have a
+look!*
+
+
 [step 0]: todo
 [step 1]: todo
 [step 2]: todo
@@ -684,3 +741,4 @@ very likely cause of leaking information.
 [String]: https://doc.rust-lang.org/stable/std/string/struct.String.html
 [newtype]: https://rust-unofficial.github.io/patterns/patterns/behavioural/newtype.html?highlight=newtype#newtype
 [deref_polymorphism]: https://rust-unofficial.github.io/patterns/anti_patterns/deref.html
+[`nutype`]: https://docs.rs/nutype/latest/nutype/
