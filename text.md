@@ -2,40 +2,40 @@
 
 By now, you're probably aware that at Mainmatter, we like Rust a lot. If you
 aren't: [have a look at our Rust page](https://mainmatter.com/rust-consulting/).
-In this blog post, I'd like to highlight one of my favourite traits of Rust (yes
+In this blog post, I'd like to highlight one of my favorite traits of Rust (yes
 pun intended): its focus on _correctness_. Rust has a very expressive type
 system that lets you offload many checks to the compiler: it supports generics,
-data-carrying enums, closures, visibility specifiers, _explicit_ conversions and
-much more. Great features that make performant, low-level programming feel as
-ergonomic as high-level languages. Sure, Rust has a learning curve, and that
-learning curve is a result of Rust's tendency to make complexity really _in your
-face_.
+data-carrying enums, closures, visibility specifiers, _explicit_ conversions, and
+much more. These arereat features that make performant, low-level programming 
+feel as ergonomic as high-level languages. Sure, Rust has a learning curve, and
+thatlearning curve is a result of Rust's tendency to make complexity really _in
+your face_.
 
 Make no mistake, every piece of software is complex: it has to run on
 computers, which, especially nowadays are complex beasts. And writing
 software with highly optimized languages with manual memory management like
-C, C++ or Rust requires knowledge of all kinds of subtleties. Rust makes these
-sublteties _explicit_, forcing you to fix all kinds of things you may never
+C, C++, or Rust requires knowledge of all kinds of subtleties. Rust makes these
+subtleties _explicit_, forcing you to fix all kinds of things you may never
 have thought of before even compiling your code.
 
 But that's not all: as projects grow and age and more people work on the same
 piece of software, communication becomes very important. And by communication I
 mean ensuring the original writer of some piece of code, the code reviewer, the
-user of the code's API, the colleague refactoring the codebase and new
+user of the code's API, the colleague refactoring the codebase, and new
 developers are on the same page about the _intent_ and _invariants_ of that
 code. What is this code doing? How am I supposed to use it correctly? What
 happens if I mess up? How do I protect this API from input it might choke on?
 Traditionally, one would write in documentation and code comments the answers
 to these and many other questions. Writing documentation is a very valuable
 job, but sadly, developers are human. And humans make mistakes. And if the
-humans think they themselves don't make mistakes, they will surely agree
+humans think they _themselves_ don't make mistakes, they will surely agree
 that their colleagues _do_.
 
-Documentation written in human language needs to be clear, specific, and up to
+Documentation written in human language needs to be clear, specific, and up-to-
 date. And even if it's written well, for it to do its job, documentation needs
 to be _read_ in the first place. And even if it _is_ read, it needs to be
 interpreted and acted upon correctly. I don't know about you, but I'm way too
-pendantic to see that go flawlessly.
+pedantic to see that go flawlessly.
 
 Now, this is why I like Rust's expressive type system: it lets me encode a great
 deal of the semantics I'd otherwise have to describe in the documentation. You
@@ -59,11 +59,11 @@ In this article, I'd like to give three main pieces of advice:
 We'll need a case to show how all this works, and since Mainmatter loves the
 travel industry, let's write up an API for booking train tickets.
 
-Looking at different train ticket services, in general the steps towards booking
+Looking at different train ticket services, in general, the steps towards booking
 are pretty similar: first, you enter the location you want to depart from and
 where you want to go, then you enter either your preferred moment of departure
-or when you want to arrive. Next you select one of a number of suggested trips
-and enter your personal information. With all information complete, you're all
+or when you want to arrive. Next, you select one of several suggested trips and 
+enter your personal information. With all the information complete, you're all
 set to book the ticket and pay. Here's what that looks like as a flowchart:
 
 ```mermaid
@@ -87,9 +87,9 @@ Pretty straightforward, right? Let's code one up.
 
 ## Setting up
 Let's set up a simple [`axum`]-based server to implement before flow. I'm only
-going to post the code relevant to the story in here, but if you're interested
-in the whole shebang: checkout the code for [step 0]. Here's what the app
-setup looks like:
+going to post the code relevant to the story here, but if you're interested in
+the whole shebang: check out the code for [step 0]. Here's what the app setup
+looks like:
 
 ```rust
 // src/lib.rs
@@ -168,7 +168,7 @@ pub struct TicketMachine {
 }
 ```
 
-Pretty much a bunch of optional strings. Does is work, though? Well, let's also
+Pretty much a bunch of optional strings. Does it work, though? Well, let's also
 create a little integration test:
 
 ```rust
@@ -199,7 +199,7 @@ $ cargo run
 [..]
 ```
 
-I'm using [`cargo-nextest`], because it gives me pretty and concise reports.
+I'm using [`cargo-nextest`] because it gives me pretty and concise reports.
 
 ```bash
 // Run tests
@@ -220,7 +220,7 @@ I like that!
 ## Looking back
 Our route handler doesn't do a lot. It will accept any `String` for a body,
 meaning that as far as our app is concerned `"🚂-🛒-🛒-🛒"` is totally a valid
-origin. It's nice that, given a string [must be valid UTF-8][String], at least our
+origin. It's nice that given a string [must be valid UTF-8][String], at least our
 handler won't accept random byte sequences, but we can do better. For the
 curious among you: the following code is in the [step 1] commit. Let's add some
 validation:
@@ -305,13 +305,13 @@ async fn test_set_bad_origin(origin: &'static [u8]) {
 And those, believe me, totally pass! Now what?
 
 ## Even better validation
-We can do better still. Here's the thing: in order for our server to validate
-locations _everywhere_, we'd need to add loads of calls to `is_valid_location`.
-What happens if I forget, though? This is where Rust's expressive type system
-comes in.  With Rust, you can create types that are valid _by construction_.
-The mere fact that such an instance of such type exists, proves that it is
-valid. And this is truly an amazing power. How do you do it? Well, by using the
-[newtype] pattern:
+We can do better still. Here's the thing: for our server to validate locations
+_everywhere_, we'd need to add loads of calls to `is_valid_location`. What
+happens if I forget, though? This is where Rust's expressive type system comes
+in. With Rust, you can create types that are valid _by construction_. The mere
+fact that such an instance of such type exists, proves that it is valid. And
+this is truly an amazing power. How do you do it? Well, by using the [newtype]
+pattern:
 
 ```rust
 // src/types/location.rs
@@ -324,7 +324,7 @@ commit.
 
 Now, wrapping a struct in and of itself is not too useful. But we already did
 something very important: give the type a good name, adding semantics! Now, of
-course you'd add some doc comments describing the type some more, but already
+course, you'd add some doc comments describing the type some more, but already
 it's clear what this type is meant to represent. There's no way to instantiate
 it from outside the `types::location` module, though. On the one hand, that's
 great: right now there's no way to instantiate an invalid `Location`. However,
@@ -373,7 +373,7 @@ deserialization. Now, the _only_ way to instantiate a `Location` is through it's
 `TryFrom<String>` implementation, which does the validation. Barring any unsafe
 magic tricks, that is. Getting the value _out_ is a matter of adding more
 functionality, which I won't bore you with right now. But you can imagine adding
-an implementaion for `std::fmt::Display`, or a method
+an implementation for `std::fmt::Display`, or a method
 `fn as_str(&self) -> &str`. Don't go implement `std::ops::Deref<Target=String>`
 though, that'd [defeat the purpose][deref_polymorphism].
 
@@ -407,15 +407,15 @@ async fn set_origin(session: Session, Json(origin): Json<Location>) -> Result<Js
 ```
 
 As you can see, instead of taking a `String` body, this time we're taking a
-`Json<Location>`. Axum will attempt to deserialize the request body into into a
-`Location`, and the `Json<_>` extractor tells it it should use `serde_json` in
-order to do so. And as `serde_json` is going to use the `serde::Deserialize`
+`Json<Location>`. Axum will attempt to deserialize the request body into a
+`Location`, and the `Json<_>` extractor tells it that it should use `serde_json`
+to do so. And as `serde_json` is going to use the `serde::Deserialize`
 implementation we derived on `Location` before, `Location::try_from<String>`
-gets run even _before_ code within the route handler is run. So within the route
-handler, we're _certain_ that the `origin` parameter represents a valid
+gets run even the _before_ code within the route handler is run. So within the
+route handler, we're _certain_ that the `origin` parameter represents a valid
 `Location`!
 
-Now of course, our test is just sending plain, unquoted strings, and unquoted
+Now, of course, our test is just sending plain, unquoted strings, and unquoted
 strings are not valid JSON. So let's update our test:
 
 ```rust
@@ -481,15 +481,14 @@ There we go! With that set up, we have the following guarantees within the
 And it's all checked by Rust's type system! We might as well throw out the cases
 that pass in non-UTF-8 sequences or invalid JSON: the only really sensible
 part to test is the implementation of `TryFrom<String>`. But let's keep them
-anyway, because tests are great to have when doing big code refactors.
+anyway because tests are great to have when doing big code refactors.
 
 ## Output sanitization
-So far, Rust's type system has been working for us really well to give us
+So far, Rust's type system has been working for us very well to give us
 guarantees about input. How about output though? Using the [`newtype`] pattern
 from the previous section again, we can ensure sensitive data gets hidden in
-responses and logs. Furthermore, we can make make the output encoding format
-part of our type zoo. Let me remind you what our `TicketOffice` model looks like
-so far:
+responses and logs. Furthermore, we can make the output encoding format part of
+our type zoo. Let me remind you what our `TicketOffice` model looks like so far:
 
 ```rust
 // src/types/ticket_machine.rs
@@ -509,16 +508,16 @@ pub struct TicketMachine {
 }
 ```
 
-First thing you'll notice is that we aren't doing any input validation for the
-fields other than of `origin` and `destination`. But other than that, our struct
-holds some sensitive personal data: `name`, `email`, `phone_number`, and
+The first thing you'll notice is that we aren't doing any input validation 
+for the fields other than `origin` and `destination`. But other than that, our 
+struct holds some sensitive personal data: `name`, `email`, `phone_number`, and
 `payment_info`. Let's focus on that last field, `payment_info`, though. We
 haven't specified yet what `payment_info` _is_, but let's assume for now that it
 may contain credit card details. Now, credit card details are things you don't
-want ending up in your logs or in API responses. Using the [`newtype`] pattern,
-we can make it _really hard_ to leak such data to the logs. The following
-examples can be found in the repo state as of the [step 3] commit. Let's conjure
-up a `PaymentInfo` type:
+want ending up in your logs or API responses. Using the [`newtype`] pattern, we 
+can make it _hard_ to leak such data into the logs. The following examples can
+be found in the repo state as of the [step 3] commit. Let's conjure up a
+`PaymentInfo` type:
 
 ```rust
 // src/types/payment_info.rs
@@ -585,7 +584,7 @@ async fn book_trip(
 ```
 
 Great. We were already wrapping our output in a `Json`, ensuring the data gets
-encoded in the right format before sending it out. Now we'll add a some tests to
+encoded in the right format before sending it out. Now we'll add some tests to
 validate that this works:
 
 ```rust
@@ -651,7 +650,6 @@ And test:
 
 ```bash
 $ cargo nextest run
-   Compiling takeoff v0.1.0 (/Users/hdoordt/dev/mm/content/trash-in-treasure-out)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
 ------------
  Nextest run ID 1ba4afd2-c85c-4817-8f6d-5d66090fb3a1 with nextest profile: default
@@ -668,7 +666,7 @@ $ cargo nextest run
 ```
 
 There you go! With that, we've ensured that once our `PaymentInfo` is
-instatiated, it'll be quite hard to accidentally leak its contents. Completely
+instantiated, it'll be quite hard to accidentally leak its contents. Completely
 hiding the payment info from everything would make it rather unuseful, but at
 least we can't accidentally log them or send them in a response, preventing a
 very likely cause of leaking information.
@@ -698,7 +696,7 @@ Furthermore, we ensured `Location`s are valid by construction: by implementing
 the validation in the `TryFrom<String>` implementation for `Location`, and
 ensuring the `Location` can only be created and deserialized via that
 validation, we've ensured that a `Location` _always_ represents a valid
-location, *as long as our valication logic is correct*. And by accepting
+location, *as long as our validation logic is correct*. And by accepting
 `Json<Location>` in our Axum request handlers directly, those handlers don't
 need to do any further validation.
 
@@ -713,17 +711,17 @@ _accidentally_ leaking such info has become much harder.
 Are there any downsides? As always: yes, this is no silver bullet. One thing you
 probably have noticed so far is that the patterns described in this post
 introduce a bunch of boilerplate. There are crates (e.g. [`nutype`]) out there
-that aim to reduce this, but they come with their own trade offs. Furthermore,
+that aim to reduce this, but they come with their own trade-offs. Furthermore,
 sometimes not all invariants can be expressed in Rust code. In such cases, one
 still has to rely on documentation to be thorough and correct.
 
-Other than that, rigidity may not always be what you want. Somtimes your
+Other than that, rigidity may not always be what you want. Sometimes your
 invariants and requirements are not all that clear, and are very subject to
 change. In such cases, it's not great to update loads of boilerplate all the
 time. This, I think, is a bit of a matter of taste: I myself like to force
 myself to clarify the requirements and invariants before implementation, and
 with the validation being implemented in a single place, updating that is not
-such a big hassle. And what you get back is huge: correct, robust, clear and 
+such a big hassle. And what you get back is huge: correct, robust, clear, and 
 maintainable code!
 
 *In [step 4], I've updated the rest of the method handlers. Be sure to have a
