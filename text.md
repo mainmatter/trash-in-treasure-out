@@ -1,5 +1,7 @@
 # Trash in, treasure out
 
+*Making your API clear and robust with Rust's type system*
+
 By now, you're probably aware that at Mainmatter, we like Rust a lot. If you
 aren't: [have a look at our Rust page](https://mainmatter.com/rust-consulting/).
 In this blog post, I'd like to highlight one of my favorite traits of Rust (yes
